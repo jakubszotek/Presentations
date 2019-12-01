@@ -1,0 +1,764 @@
+---
+title: Risk Models Development Process
+author: Jakub Szotek
+date: November, 2019
+fontsize: 9pt
+output:
+  beamer_presentation:
+    colortheme: seahorse
+    fig_height: 6
+    fonttheme: serif
+    keep_tex: yes
+    slide_level: 3
+    theme: Warsaw
+    toc: yes
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(width=58)
+library(knitr)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(DescTools)
+require(caTools)
+```
+
+# 1. Data Preparation
+### Data Preparation
+  + Model population
+  + Observation window
+  + Observation level
+  + Review of data systems
+  + Source data
+  
+### Load data
+```{r}
+Data <- read.csv('https://raw.githubusercontent.com/jakubszotek/Presentations/master/Risk%20Models%20Development%20Process/Data/Data.csv')
+```
+
+### View data
+```{r}
+print(head(Data,4), digits = 2, row.names = FALSE)
+```
+
+# 2. Analysis of risk parameters
+### All headers
+```{r, echo = TRUE}
+sapply(Data, class)
+```
+
+### Default variable
+```{r, echo = TRUE}
+head(Data,10) %>% select(Default_date, Default)
+```
+
+### Risk drivers
+  + Types of drivers:
+    + Demographic
+    + Financial
+    + Behavioural
+    + Macroeconomic
+  + Types of data:
+    + Numerical
+    + Boolean
+    + Categorical
+    
+### Risk drivers
+```{r, eval = FALSE}
+Drivers <- Data %>% select(-Date_of_data,-Default_date)
+print(head(Drivers,5), digits = 2, row.names = FALSE)
+```
+
+### Risk drivers
+```{r, echo = FALSE}
+Drivers <- Data %>% select(-Date_of_data,-Default_date)
+print(head(Drivers,5), digits = 2)
+```
+
+### Single Factor Analysis - Univariate
+  + We exclude all variables having more than 10% of missing values
+  + Is there enough variance for each variable?
+```{r}
+var_summary <- summary(Drivers %>% select(Country, Industry,
+                                          Length_of_business,
+                                          Total_assets,
+                                          Financial_leverage,
+                                          Credit_limit,
+                                          EDF,
+                                          GDP_growth))
+```
+
+### Single Factor Analysis - Univariate
+```{r, echo = FALSE}
+var_summary[,1:5]
+```
+
+### Single Factor Analysis - Univariate
+```{r, echo = FALSE}
+var_summary[,6:8]
+```
+
+### Exclusions
++ Financial_leverage has 158 N/A's out of 1000 observations (15.8%)
+```{r}
+Drivers_1 = subset(Drivers, select=-c(Financial_leverage))
+print(head(Drivers_1,5), digits = 2, row.names = FALSE)
+```
+
+### Further modifications
+  + Handling outliers
+  + Dealing with missing values if needed
+  + Transformations:
+    + exponential
+    + logarithmic
+    + polynomial
+    
+### Single Factor Analysis - Bivariate - Country
+  + We check the relationship between risk drivers and default
+```{r, echo = TRUE}
+country_group <- Data %>% group_by(Country) %>%
+  summarise(default_rate = mean(Default),count = n())
+print(country_group, digits = 3, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Country
+```{r, eval = FALSE}
+ggplot(data=country_group, aes(x=Country, y=default_rate,
+                               group=1)) +
+    geom_bar(aes(x=Country, y=count/800),stat="identity",
+             fill="tan1", colour="sienna3")+
+    geom_line() +
+    geom_point()+
+    scale_y_continuous(name = waiver(),
+                       sec.axis = sec_axis(~ . * 800,
+                                           name = "count"))
+```
+
+### Single Factor Analysis - Bivariate - Country
+```{r, echo = FALSE}
+plot_country <- ggplot(data=country_group, aes(x=Country, y=default_rate, group=1)) +
+    geom_bar(aes(x=Country, y=count/800),stat="identity",
+             fill="tan1", colour="sienna3")+
+    geom_line() +
+    geom_point()+
+    scale_y_continuous(name = waiver(),
+                       sec.axis = sec_axis(~ . * 800, name = "count"))
+plot_country
+```
+
+### Single Factor Analysis - Bivariate - Country
+  + Switch from categorical variable Country to boolean Country_PL
+  + Is this in line with common sense and expectations?
+  + What is the expected impact of the variable on the final model?
+  
+### Single Factor Analysis - Bivariate - Country
+```{r}
+Drivers_2 <- Drivers_1
+Drivers_2$Country_PL <- (Drivers_1$Country == "PL")*1
+```
+
+### Single Factor Analysis - Bivariate - Country
+```{r, echo = FALSE}
+print(head(subset(Drivers_2, select=-c(Customer_ID)),7), digits = 2, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Country
+We remove the variable Country now
+```{r, eval = FALSE}
+Drivers_2 <- subset(Drivers_2, select=-c(Country))
+print(head(Drivers_2,7), digits = 2, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Country
+We remove the variable Country now
+```{r, echo = FALSE}
+Drivers_2 <- subset(Drivers_2, select=-c(Country))
+print(head(subset(Drivers_2, select=-c(Customer_ID)),7), digits = 2)
+```
+
+### Single Factor Analysis - Bivariate - Industry
+```{r, echo = TRUE}
+industry_group <- Data %>% group_by(Industry) %>%
+  summarise(default_rate = mean(Default),count = n())
+print(industry_group, digits = 3, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Industry
+```{r, eval = FALSE}
+ggplot(data=industry_group, aes(x=Industry, y=default_rate,
+                                group=1)) +
+    geom_bar(aes(x=Industry, y=count/800),stat="identity",
+             fill="tan1", colour="sienna3")+
+    geom_line() +
+    geom_point()+
+    scale_y_continuous(name = waiver(),
+                       sec.axis = sec_axis(~ . * 800,
+                                           name = "count"))
+```
+
+### Single Factor Analysis - Bivariate - Industry
+```{r, echo = FALSE}
+plot_industry <- ggplot(data=industry_group, aes(x=Industry, y=default_rate, group=1)) +
+    geom_bar(aes(x=Industry, y=count/800),stat="identity",
+             fill="tan1", colour="sienna3")+
+    geom_line() +
+    geom_point()+
+    scale_y_continuous(name = waiver(),
+                       sec.axis = sec_axis(~ . * 800, name = "count"))
+plot_industry
+```
+
+### Single Factor Analysis - Bivariate - Industry
+  + Switch from categorical variables Industry $\in$ {A, B} to boolean Industry_AB
+  + Is this in line with common sense and expectations?
+  + What is the expected impact of the variable on the final model?
+
+### Single Factor Analysis - Bivariate - Industry
+```{r, eval=FALSE}
+Drivers_3 <- Drivers_2
+Drivers_3$Industry_AB <- (Drivers_2$Industry %in% c("A","B"))*1
+print(head(subset(Drivers_3, select=-c(Customer_ID)),7),
+      digits = 2, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Industry
+```{r, echo=FALSE}
+Drivers_3 <- Drivers_2
+Drivers_3$Industry_AB <- (Drivers_2$Industry %in% c("A","B"))*1
+print(head(subset(Drivers_3, select=-c(Customer_ID)),7),
+      digits = 2, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Industry
+```{r, echo = FALSE}
+Drivers_3 <- subset(Drivers_3, select=-c(Industry))
+print(head(subset(Drivers_3, select=-c(Customer_ID)),7), digits = 2, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Length_of_business
+Let's bucket the data by year
+```{r, echo = FALSE}
+Data$Length_of_business_Floor <- floor(Data$Length_of_business)
+length_group <- Data %>% group_by(Length_of_business_Floor) %>% summarise(default_rate = mean(Default),count = n())
+print(length_group, digits = 3, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Length_of_business
+Let's cut the dataset in 11 and put everything longer than that into one group
+```{r, echo = FALSE}
+Data$Length_of_business_Floor[Data$Length_of_business_Floor >= 11] <- 11
+length_group <- Data %>% group_by(Length_of_business_Floor) %>% summarise(default_rate = mean(Default),count = n())
+print(length_group, digits = 3, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Length_of_business
+```{r, eval = FALSE}
+ggplot(data=length_group, aes(x=Length_of_business_Floor,
+                              y=default_rate, group=1)) +
+    geom_bar(aes(x=Length_of_business_Floor, y=count/400),
+             stat="identity",
+             fill="tan1", colour="sienna3")+
+    geom_line() +
+    geom_point()+
+    scale_y_continuous(name = waiver(),
+                       sec.axis = sec_axis(~ . * 400,
+                                           name = "count"))
+```
+
+### Single Factor Analysis - Bivariate - Length_of_business
+ + Is this relation in line with logic?
+```{r, echo = FALSE}
+plot_length <- ggplot(data=length_group, aes(x=Length_of_business_Floor, y=default_rate, group=1)) +
+    geom_bar(aes(x=Length_of_business_Floor, y=count/400),stat="identity",
+             fill="tan1", colour="sienna3")+
+    geom_line() +
+    geom_point()+
+    scale_y_continuous(name = waiver(),
+                       sec.axis = sec_axis(~ . * 400, name = "count"))
+plot_length
+```
+
+### Single Factor Analysis - Bivariate - Total_assets
+```{r, eval=FALSE}
+Data$Total_assets_Floor <- floor(Data$Total_assets)
+assets_group <- Data %>% group_by(
+  Total_assets_Floor) %>% summarise(
+    default_rate = mean(Default),count = n())
+print(assets_group, digits = 3, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Total_assets
+```{r, echo=FALSE}
+Data$Total_assets_Floor <- floor(Data$Total_assets)
+assets_group <- Data %>% group_by(Total_assets_Floor) %>% summarise(default_rate = mean(Default),count = n())
+print(assets_group, digits = 3, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Total_assets
+Let's cut the dataset in 8 and put everything longer than that into one group
+```{r, echo = FALSE}
+Data$Total_assets_Floor[Data$Total_assets_Floor >= 8] <- 8
+assets_group <- Data %>% group_by(Total_assets_Floor) %>% summarise(default_rate = mean(Default),count = n())
+print(assets_group, digits = 3, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Total_assets
+```{r, eval = FALSE}
+ggplot(data=assets_group, aes(x=Total_assets_Floor, y=default_rate,
+                              group=1)) +
+    geom_bar(aes(x=Total_assets_Floor, y=count/500),
+             stat="identity",
+             fill="tan1", colour="sienna3")+
+    geom_line() +
+    geom_point()+
+    scale_y_continuous(name = waiver(),
+                       sec.axis = sec_axis(~ . * 500,
+                                           name = "count"))
+```
+
+### Single Factor Analysis - Bivariate - Total_assets
+```{r, echo = FALSE}
+plot_assets <- ggplot(data=assets_group, aes(x=Total_assets_Floor, y=default_rate, group=1)) +
+    geom_bar(aes(x=Total_assets_Floor, y=count/500),stat="identity",
+             fill="tan1", colour="sienna3")+
+    geom_line() +
+    geom_point()+
+    scale_y_continuous(name = waiver(),
+                       sec.axis = sec_axis(~ . * 500, name = "count"))
+plot_assets
+```
+
+```{r, include = FALSE}
+temp <- Data$Credit_limit * 4
+temp2 <- floor(temp)
+temp3 <- temp2 / 4
+temp3[temp3 >= 1.25] <- 1.25
+Data$Credit_limit_Floor <- temp3
+rm(temp,temp2,temp3)
+```
+
+### Single Factor Analysis - Bivariate - Credit_limit
+```{r, echo = FALSE}
+limit_group <- Data %>% group_by(Credit_limit_Floor) %>% summarise(default_rate = mean(Default),count = n())
+print(limit_group, digits = 3, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Credit_limit
+```{r, echo = FALSE}
+plot_limit <- ggplot(data=limit_group, aes(x=Credit_limit_Floor, y=default_rate, group=1)) +
+  geom_bar(aes(x=Credit_limit_Floor, y=count/500),stat="identity",
+           fill="tan1", colour="sienna3")+
+  geom_line() +
+  geom_point()+
+  scale_y_continuous(name = waiver(),
+                     sec.axis = sec_axis(~ . * 500, name = "count"))
+plot_limit
+```
+
+### Single Factor Analysis - Bivariate - Expected Default Frequency
+EDF is a variable common to all debtors dependent on year
+```{r}
+EDF_group <- Data %>% group_by(Date_of_data) %>%
+  summarise(default_rate = mean(Default), EDF = mean(EDF),
+            count = n())
+print(EDF_group, digits = 3, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - Expected Default Frequency
+```{r, echo = FALSE}
+plot_edf <- ggplot(data=EDF_group, aes(x=Date_of_data, y=default_rate, group=1)) +
+  geom_point()+
+  geom_line(aes(x=Date_of_data, y=EDF * 10, group=1), col="Red")+
+  geom_line() +
+  geom_point()+
+  scale_y_continuous(name = waiver(),
+                     sec.axis = sec_axis(~ . / 10, name = "EDF"))
+plot_edf
+```
+
+### Single Factor Analysis - Bivariate - Expected Default Frequency
+```{r, echo = FALSE}
+plot_edf_scatter <- plot(EDF_group$EDF, EDF_group$default_rate,
+                    xlab="EDF ", ylab="Default rate", pch=19) +
+  abline(lm(EDF_group$default_rate~EDF_group$EDF), col="red")
+plot_edf_scatter
+```
+
+### Single Factor Analysis - Bivariate - GDP_growth
+GDP_growth is a variable common to all debtors dependent on year and country
+```{r}
+GDP_group <- Data %>% group_by(Date_of_data,Country) %>%
+  summarise(default_rate = mean(Default),GDP_growth = mean(GDP_growth))
+print(GDP_group, digits = 3, row.names = FALSE)
+```
+
+### Single Factor Analysis - Bivariate - GDP_growth - UK
+```{r, echo = FALSE}
+GDP_group_UK <- subset(GDP_group, Country %in% c("UK"))
+ggplot(data=GDP_group_UK, aes(x=Date_of_data, y=default_rate, group=1)) +
+  geom_point()+
+  geom_line(aes(x=Date_of_data, y=GDP_growth / 5, group=1), col="Red")+
+  geom_line() +
+  geom_point()+
+  scale_y_continuous(name = waiver(),
+                     sec.axis = sec_axis(~ . * 5, name = "GDP_Growth"))
+```
+
+### Single Factor Analysis - Bivariate - GDP_growth - FR
+```{r, echo = FALSE}
+GDP_group_FR <- subset(GDP_group, Country %in% c("FR"))
+ggplot(data=GDP_group_FR, aes(x=Date_of_data, y=default_rate, group=1)) +
+  geom_point()+
+  geom_line(aes(x=Date_of_data, y=GDP_growth / 5, group=1), col="Red")+
+  geom_line() +
+  geom_point()+
+  scale_y_continuous(name = waiver(),
+                     sec.axis = sec_axis(~ . * 5, name = "GDP_Growth"))
+```
+
+### Single Factor Analysis - Bivariate - GDP_growth - DE
+```{r, echo = FALSE}
+GDP_group_DE <- subset(GDP_group, Country %in% c("DE"))
+ggplot(data=GDP_group_DE, aes(x=Date_of_data, y=default_rate, group=1)) +
+  geom_point()+
+  geom_line(aes(x=Date_of_data, y=GDP_growth / 5, group=1), col="Red")+
+  geom_line() +
+  geom_point()+
+  scale_y_continuous(name = waiver(),
+                     sec.axis = sec_axis(~ . * 5, name = "GDP_Growth"))
+```
+
+### Single Factor Analysis - Bivariate - GDP_growth - PL
+```{r, echo = FALSE}
+GDP_group_PL <- subset(GDP_group, Country %in% c("PL"))
+ggplot(data=GDP_group_PL, aes(x=Date_of_data, y=default_rate, group=1)) +
+  geom_point()+
+  geom_line(aes(x=Date_of_data, y=GDP_growth / 5, group=1), col="Red")+
+  geom_line() +
+  geom_point()+
+  scale_y_continuous(name = waiver(),
+                     sec.axis = sec_axis(~ . * 5, name = "GDP_Growth"))
+```
+
+### Single Factor Analysis - Bivariate - GDP_growth - All countries
+```{r, echo = FALSE}
+plot_gdp_scatter <- plot(GDP_group$GDP_growth, GDP_group$default_rate,
+                    xlab="GDP_growth ", ylab="Default rate", pch=19) +
+  abline(lm(GDP_group$default_rate~GDP_group$GDP_growth), col="red")
+plot_gdp_scatter
+```
+
+### Final dataset
+```{r}
+Drivers_final <- Drivers_3[, c("Country_PL","Industry_AB",
+                "Length_of_business","Total_assets","Credit_limit",
+                "EDF","GDP_growth","Default")]
+print(head(Drivers_final,5), digits = 2, row.names = FALSE)
+```
+
+# 3. Data split
+
+### Development sample
+  + Data that we use to estimate model parameters
+  + Usually between 75% and 90% of the whole sample
+```{r}
+set.seed(101)
+sample = sample.split(Drivers_final$Default, SplitRatio = .80)
+development_sample = subset(Drivers_final, sample == TRUE)
+```
+
+### Hold-out sample
+  + Data that we use to evaluate the performance of the model
+  + Usually between 10% and 25% of the whole sample
+```{r}
+hold_out_sample  = subset(Drivers_final, sample == FALSE)
+```
+
+# 4. Model functional form
+
+### Model functional form
+
+Possible methods for PD modelling:
+
+  + Probit model
+  + Logistic regression
+  + Scoring models
+  + Machine learning
+  + Neural networks
+  
+### Logistic Regression
+\[ \ln \left\{ \frac{P[Y=1|X]}{P[Y=0|X]} \right\} = \beta_0 + X\beta \]
+with $X = (X_1, X_2, \ldots, X_N)$ the set of prognostic factors.
+Assuming a linear model for $f_n$, the probability that $Y=1$ is modelled as:
+  \[y = \frac{1}{1+e^{-(\beta_0+\beta_1 x_1+\beta_2 x_2+\beta_3 x_3+\ldots)}}\]
+In R, this regression can be fitted with the function \tt{glm()}.
+
+# 5. Multiple Factor Analysis
+
+### Number of possible models
+
++ We have 7 input variables (risk drivers) and 1 modelled variable
++ The number of possible models:
+$2^7 - 1 = 127.$
+```{r}
+variables = colnames(Drivers_final)
+variables
+```
+
+### Exemplary model
+```{r, eval = FALSE}
+m0 <- glm(data = development_sample,
+          formula = Default ~ Country_PL + Industry_AB + 
+                               Total_assets + Credit_limit + EDF,
+         family = binomial)
+summary(m0)[12]
+```
+
+### Exemplary model
+```{r, echo = FALSE}
+m0 <- glm(data = development_sample,
+          formula = Default ~ Country_PL + Industry_AB + 
+                               Total_assets + Credit_limit + EDF,
+          family = binomial)
+summary(m0)[12]
+```
+
+### Exemplary model
+```{r, echo = FALSE}
+est <- coefficients(m0)
+expected_sign <- data.frame("Driver"=
+                              c("Country_PL","Industry_AB","Total_assets","Credit_limit","EDF"),
+                            "Sign" = c("-","+","-","-?","+?"), "Estimate" =
+                              unname(est[c("Country_PL","Industry_AB","Total_assets","Credit_limit","EDF")]))
+print(expected_sign, digits = 2)
+```
+
+### Acceptance criteria - No counterintuitive signs
+```{r, echo = FALSE,fig.width=3,fig.height=2}
+par(mfrow=c(1,2))
+print(subset(expected_sign, Driver %in% ("Country_PL")), digits = 2)
+plot_country
+```
+
+### Acceptance criteria - No counterintuitive signs
+```{r, echo = FALSE,fig.width=3,fig.height=2}
+par(mfrow=c(1,2))
+print(subset(expected_sign, Driver %in% ("Industry_AB")), digits = 2)
+plot_industry
+```
+
+### Acceptance criteria - No counterintuitive signs
+```{r, echo = FALSE,fig.width=3,fig.height=2}
+par(mfrow=c(1,2))
+print(subset(expected_sign, Driver %in% ("Total_assets")), digits = 2)
+plot_assets
+```
+
+### Acceptance criteria - No counterintuitive signs
+```{r, echo = FALSE,fig.width=4.5,fig.height=2}
+par(mfrow=c(1,2))
+print(subset(expected_sign, Driver %in% ("Credit_limit")), digits = 2)
+plot_limit
+```
+
+### Acceptance criteria - No counterintuitive signs
+```{r, echo = FALSE,fig.width=3,fig.height=2}
+par(mfrow=c(2,2))
+print(subset(expected_sign, Driver %in% ("EDF")), digits = 2)
+plot_edf
+```
+
+### Acceptance criteria - p-value
+```{r}
+summary <- data.frame(coef(summary(m0))[,c(1,4)])
+summary$p_val_less_5PRC <- summary[,2] <= 0.05
+summary
+```
+
+### Acceptance criteria - correlation
+No two variables can be correlated more than 0.50 in absolute terms.
+```{r}
+corr_data <- subset(development_sample,
+                    select = c("Country_PL",
+                               "Industry_AB",
+                               "Total_assets",
+                               "Credit_limit",
+                               "EDF"))
+correlation_results <- cor(corr_data)
+```
+
+### Acceptance criteria - correlation
+```{r, echo = FALSE}
+print(correlation_results, digits=2)
+```
+
+### Acceptance criteria - Summary
+  + Expected sign
+    + Credit_limit and EDF do not meet the criteria
+  + Significance (p-value)
+    + Credit_limit and EDF do not meet the criteria
+  + Correlation
+    + Total_assets and Credit_limit cannot appear in the same model
+    
+Result -> model rejected
+
+### Model search
+
+An estimation is done for each possible model and only the models that fulfil all the criteria are considered further.
+In practice:
+
+  + models including correlated pairs of variables are not estimated
+  + regulatory requirements state that some kinds of variables need to be included, eg:
+    + customer size or proxy
+    + macroeconomic
+    
+# 6. Model selection
+
+### Model selection - performance criteria
+
+For all the models that passed the acceptance criteria we calculate some performance metrics eg.:
+
+  + Gini coefficient - the higher the better
+  + Akaike information criterion (AIC) - the lower the better
+  
+### AIC - Akaike Information Criteria
+
+$$ AIC = 2k - 2ln(\hat{L}),$$
+where:
+
+$k$ - number of parameters (penalize more parameters)
+
+$\hat{L}$ - likelihood function (promote higher likelihood)
+  
+### Model selection - performance criteria
+
+Let's compare three models:
+
+  + m1: Default ~ Industry_AB + Length_of_business + Total_assets
+  + m2: Default ~ Country_PL + Length_of_business + Total_assets
+  + m3: Default ~ Country_PL + Industry_AB + Length_of_business + Total_assets
+  
+### Model selection - estimation of parameters
+```{r}
+m1 <- glm(data = development_sample,
+          formula = Default ~ Industry_AB + Length_of_business +
+                              Total_assets,
+          family = binomial)
+m2 <- glm(data = development_sample,
+          formula = Default ~ Country_PL + Length_of_business +
+                              Total_assets,
+          family = binomial)
+m3 <- glm(data = development_sample,
+          formula = Default ~ Country_PL + Industry_AB +
+                              Length_of_business + Total_assets,
+          family = binomial)
+```
+
+### Model selection - Gini
+We predict the probabilities for each model
+```{r}
+development_sample$prediction_m1 =
+              fitted.values(m1)
+development_sample$prediction_m2 =
+              fitted.values(m2)
+development_sample$prediction_m3 =
+              fitted.values(m3)
+```
+
+### Model selection - Gini
+```{r}
+print(head(subset(development_sample, select =
+                    c(Default,prediction_m1,
+                      prediction_m2,prediction_m3)),
+           10),digits = 2)
+```
+
+### Model selection - Gini
+```{r}
+model_summary <- data.frame(
+              "Model"= c("m1","m2","m3"),
+              "Gini_development" =
+                c(Gini(development_sample$prediction_m1,
+                        development_sample$Default),
+                  Gini(development_sample$prediction_m2,
+                        development_sample$Default),
+                  Gini(development_sample$prediction_m3,
+                        development_sample$Default)))
+```
+
+### Model selection - Gini
+```{r}
+print(model_summary, digits = 3)
+```
+
+### Model selection - AIC
+```{r}
+model_summary$AIC <- c(AIC(m1),AIC(m2),AIC(m3))
+print(model_summary, digits = 3)
+```
+
+### Model selection - Champion and Challenger
+
+After the analysis of all possible models for all functional forms considered we choose:
+
+  + Champion model - best model (our m3)
+  + Challenger model - second best (our m1)
+  
+# 7. Model validation
+
+### Model validation
+We need to check how our champion and challanger models perform on the hold-out sample
+```{r}
+hold_out_sample$prediction_m3 <-predict(m3,
+                      newdata = hold_out_sample, type = 'response')
+hold_out_sample$prediction_m1 <-predict(m1,
+                      newdata = hold_out_sample, type = 'response')
+```
+
+### Validation - Gini
+```{r}
+validation_summary <- data.frame(
+              "Model"= c("m3","m1"),
+              "Gini_hold_out" =
+                c(Gini(hold_out_sample$prediction_m3,
+                      hold_out_sample$Default),
+                  Gini(hold_out_sample$prediction_m1,
+                      hold_out_sample$Default)))
+```
+
+### Validation - Gini
+```{r}
+print(validation_summary, digits = 3)
+```
+
+### Summarize
+```{r}
+summary_final <- merge(x = model_summary,
+                       y = validation_summary,
+                       by = "Model",
+                       all.y = TRUE) %>% subset(select=-c(AIC))
+summary_final$Dev_minus_hold_out <-
+  summary_final$Gini_development - summary_final$Gini_hold_out
+```
+
+### Summarize
+```{r}
+print(summary_final, digits = 3)
+```
+### Conclusions
+  + Both models seem to perform better on the hold-out sample than on the development sample
+  + The classification remains the same:
+    + Champion: m3 - Default ~ Country_PL + Industry_AB + Length_of_business + Total_assets
+```{r}
+print(coefficients(m3), digits = 3)
+```
+
+### Conclusions
+  + Challenger: m1 - Default ~ Industry_AB + Length_of_business + Total_assets
+```{r}
+print(coefficients(m1), digits = 3)
+```
+
+### End
+------------------------------------ THANK YOU!!! ------------------------------------ 
